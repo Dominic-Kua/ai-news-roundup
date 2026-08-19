@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Archive - {{ edition_date }} - AI News Roundup{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>Archive</h1>
+    <div class="date-nav">
+        <a href="/archive/{{ prev_date }}" class="nav-arrow">&larr; Prev</a>
+        <input type="date" id="datePicker" value="{{ edition_date }}"
+               onchange="window.location.href='/archive/' + this.value">
+        <a href="/archive/{{ next_date }}" class="nav-arrow">Next &rarr;</a>
+    </div>
+</div>
+
+{% if articles %}
+<div class="articles-grid">
+    {% for article in articles %}
+    <div class="article-card" data-id="{{ article.id }}">
+        <h2><a href="{{ article.url }}" target="_blank" rel="noopener">{{ article.title }}</a></h2>
+        <p class="source">{{ article.source }}</p>
+        <p class="summary">{{ article.summary }}</p>
+        <div class="feedback-buttons">
+            <button class="btn-like {% if article.liked == 1 %}active{% endif %}"
+                    onclick="setPreference({{ article.id }}, true)"
+                    aria-label="Like">
+                👍
+            </button>
+            <button class="btn-dislike {% if article.liked == 0 and article.liked is not none %}active{% endif %}"
+                    onclick="setPreference({{ article.id }}, false)"
+                    aria-label="Dislike">
+                👎
+            </button>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="empty-state">
+    <p>No edition for {{ edition_date }}.</p>
+</div>
+{% endif %}
+
+<script>
+async function setPreference(articleId, liked) {
+    const res = await fetch('/api/preferences', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({article_id: articleId, liked: liked})
+    });
+    if (res.ok) {
+        const card = document.querySelector(`.article-card[data-id="${articleId}"]`);
+        const likeBtn = card.querySelector('.btn-like');
+        const dislikeBtn = card.querySelector('.btn-dislike');
+
+        if (liked) {
+            likeBtn.classList.toggle('active');
+            dislikeBtn.classList.remove('active');
+        } else {
+            dislikeBtn.classList.toggle('active');
+            likeBtn.classList.remove('active');
+        }
+    }
+}
+</script>
+{% endblock %}

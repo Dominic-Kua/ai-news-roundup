@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Today's Briefing - AI News Roundup{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>Today's Briefing</h1>
+    <p class="date">{{ edition_date }}</p>
+    {% if last_run %}
+    <p class="last-run">Last pipeline run: {{ last_run }}</p>
+    {% endif %}
+</div>
+
+{% if articles %}
+<div class="articles-grid">
+    {% for article in articles %}
+    <div class="article-card" data-id="{{ article.id }}">
+        <h2><a href="{{ article.url }}" target="_blank" rel="noopener">{{ article.title }}</a></h2>
+        <p class="source">{{ article.source }}</p>
+        <p class="summary">{{ article.summary }}</p>
+        <div class="feedback-buttons">
+            <button class="btn-like {% if article.liked == 1 %}active{% endif %}"
+                    onclick="setPreference({{ article.id }}, true)"
+                    aria-label="Like">
+                👍
+            </button>
+            <button class="btn-dislike {% if article.liked == 0 and article.liked is not none %}active{% endif %}"
+                    onclick="setPreference({{ article.id }}, false)"
+                    aria-label="Dislike">
+                👎
+            </button>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="empty-state">
+    <p>No articles yet — first briefing arrives at 6am.</p>
+    <p>Or <a href="/api/trigger" onclick="triggerPipeline(event)">trigger a pipeline run</a> manually.</p>
+</div>
+{% endif %}
+
+<script>
+async function setPreference(articleId, liked) {
+    const res = await fetch('/api/preferences', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({article_id: articleId, liked: liked})
+    });
+    if (res.ok) {
+        const card = document.querySelector(`.article-card[data-id="${articleId}"]`);
+        const likeBtn = card.querySelector('.btn-like');
+        const dislikeBtn = card.querySelector('.btn-dislike');
+
+        if (liked) {
+            likeBtn.classList.toggle('active');
+            dislikeBtn.classList.remove('active');
+        } else {
+            dislikeBtn.classList.toggle('active');
+            likeBtn.classList.remove('active');
+        }
+    }
+}
+
+async function triggerPipeline(e) {
+    e.preventDefault();
+    const res = await fetch('/api/trigger', {method: 'POST'});
+    if (res.ok) {
+        alert('Pipeline triggered! Check back in a few minutes.');
+    } else {
+        const data = await res.json();
+        alert(data.detail || 'Failed to trigger pipeline');
+    }
+}
+</script>
+{% endblock %}

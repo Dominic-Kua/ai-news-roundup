@@ -1,15 +1,31 @@
 [project]
 name = "ai-news-roundup"
 version = "0.1.0"
-description = "Add your description here"
-readme = "README.md"
+description = "Daily curated AI news briefing with LLM curation and feedback"
 requires-python = ">=3.11"
 dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "apscheduler>=3.10",
     "ddgs>=9.15.0",
-    "mcp>=2.0.0",
+    "httpx",
+    "aiosqlite",
+    "jinja2",
+    "python-multipart",
 ]
 
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",
+    "pytest-asyncio",
+    "ruff",
 ]
+
+[tool.ruff]
+line-length = 120
+exclude = ["ddgs_mcp_server/**", "_bmad/**", ".agents/**"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["."]
+addopts = "--ignore=ddgs_mcp_server"
