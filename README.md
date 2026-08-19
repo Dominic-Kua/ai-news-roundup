@@ -18,7 +18,7 @@ Daily curated AI news briefing served on your local network. An LLM searches the
 
 ## Minimum machine specs
 
-The pipeline runs ~14 LLM calls per day (1 query generation + 7 scoring + 6 fingerprinting). With `llama3.1:8b` on CPU, expect:
+The pipeline runs ~14 LLM calls per day (1 query generation + 7 scoring + 6 fingerprinting).
 
 | Resource | Minimum | Recommended |
 |----------|---------|-------------|
@@ -27,10 +27,7 @@ The pipeline runs ~14 LLM calls per day (1 query generation + 7 scoring + 6 fing
 | CPU | 4 cores | 8+ cores |
 | GPU | Not required | Any NVIDIA with 4+ VRAM (CUDA) |
 
-**Timings on CPU (Apple M2, 16 GB):** ~10s per scoring call, full pipeline ~5 minutes.
-**Timings on GPU (NVIDIA, 4 GB VRAM):** ~2s per scoring call, full pipeline ~1 minute.
-
-The pipeline runs at 6:00 AM and finishes well before an 8:00 AM read, so CPU is perfectly fine.
+Tested on macOS (M1 Pro, 16 GB). CPU is perfectly fine — the pipeline runs at 6:00 AM and finishes well before an 8:00 AM read.
 
 ## Changing the model
 
@@ -48,13 +45,13 @@ ollama pull <model-name>
 
 **Model tradeoffs:**
 
-| Model | RAM | Speed (CPU) | Quality |
-|-------|-----|-------------|---------|
-| `tinyllama` | 1 GB | ~1s/call | Basic — misses nuance, good for testing |
-| `llama3.1:8b` | 5 GB | ~10s/call | Good — understands context and preferences |
-| `llama3.1:70b` | 40 GB | ~60s/call | Excellent — overkill for this use case |
-| `phi3` | 2 GB | ~3s/call | Decent — good balance of speed and quality |
-| `gemma2:9b` | 6 GB | ~12s/call | Good — strong at instruction following |
+| Model | RAM | Quality |
+|-------|-----|---------|
+| `tinyllama` | 1 GB | Basic — misses nuance, good for testing |
+| `llama3.1:8b` | 5 GB | Good — understands context and preferences |
+| `llama3.1:70b` | 40 GB | Excellent — overkill for this use case |
+| `phi3` | 2 GB | Decent — good balance of speed and quality |
+| `gemma2:9b` | 6 GB | Good — strong at instruction following |
 
 The model handles three tasks: generating search queries, scoring articles 1-10, and generating topic fingerprints. All three benefit from better instruction following, so `llama3.1:8b` is the sweet spot for most setups.
 
