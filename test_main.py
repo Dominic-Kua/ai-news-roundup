@@ -70,8 +70,7 @@ async def test_preference_stores(client):
     edition = await db.get_edition(date(2026, 8, 18))
     article_id = edition[0]["id"]
 
-    with patch("llm.generate_fingerprint", new_callable=AsyncMock, return_value="test fingerprint"):
-        resp = await client.post("/api/preferences", json={"article_id": article_id, "liked": True})
+    resp = await client.post("/api/preferences", json={"article_id": article_id, "liked": True})
 
     assert resp.status_code == 200
     data = resp.json()
@@ -79,6 +78,7 @@ async def test_preference_stores(client):
 
     prefs = await db.get_recent_preferences()
     assert len(prefs) == 1
+    assert prefs[0]["topic_fingerprint"] == "Test"
 
 
 @pytest.mark.asyncio

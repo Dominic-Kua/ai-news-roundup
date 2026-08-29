@@ -136,27 +136,6 @@ async def curate_articles(candidates: list[dict], preferences: list[dict]) -> li
     return scored[:7]
 
 
-async def generate_fingerprint(article: dict) -> str:
-    prompt = (
-        f"Generate a short topic fingerprint (2-6 words) for this news article:\n"
-        f"Title: {article.get('title', '')}\n"
-        f"Source: {article.get('source', '')}\n"
-        f"Summary: {article.get('summary', '')}\n\n"
-        f"Return ONLY the fingerprint text, no quotes, no explanation."
-    )
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.post(
-                f"{OLLAMA_BASE}/api/generate",
-                json={"model": MODEL, "prompt": prompt, "stream": False},
-            )
-            resp.raise_for_status()
-            return resp.json().get("response", "").strip().strip('"').strip("'")
-    except (httpx.HTTPError, httpx.TimeoutException, ValueError) as e:
-        logger.warning("Fingerprint generation failed: %s", e)
-        return article.get("title", "unknown")[:50]
-
-
 async def check_ollama() -> bool:
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:

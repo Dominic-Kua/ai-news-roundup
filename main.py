@@ -5,7 +5,6 @@ import os
 from contextlib import asynccontextmanager
 from datetime import date, timedelta
 
-import httpx
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from fastapi import FastAPI, HTTPException, Request
@@ -90,15 +89,8 @@ async def record_preference(request: Request):
     if article_id is None or liked is None:
         raise HTTPException(status_code=400, detail="article_id and liked required")
 
-    # Generate fingerprint from actual article data
-    fingerprint = None
-    try:
-        article = await db.get_article(article_id)
-        if article:
-            fingerprint = await llm.generate_fingerprint(article)
-    except (httpx.HTTPError, httpx.TimeoutException, ValueError):
-        logger.debug("Fingerprint generation failed, storing without fingerprint")
-
+    article = await db.get_article(article_id)
+    fingerprint = article["title"] if article else None
     await db.store_preference(article_id, liked, fingerprint)
     return {"status": "ok", "liked": liked}
 

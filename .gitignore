@@ -12,3 +12,12 @@ wheels/
 # App data
 data/
 *.db
+
+# Runtime logs
+server.log
+
+# Local tooling
+.agents/
+.opencode/
+_bmad/
+_bmad-output/
