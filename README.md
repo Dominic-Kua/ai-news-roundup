@@ -5,11 +5,11 @@ Daily curated AI news briefing served on your local network. An LLM searches the
 ## How it works
 
 1. **6:00 AM** — Pipeline runs automatically (or trigger manually via `POST /api/trigger`)
-2. **Search** — LLM generates 7 search queries based on trending topics and your preferences
-3. **Filter** — Results are filtered for freshness (≤48h), deduplicated, and hub/homepage pages are removed
-4. **Score** — Each article is scored 1-10 by Llama 3.1 8B via Ollama
+2. **Search** — 7 static search queries (no LLM call); up to 2 are derived from your liked topics via keyword extraction
+3. **Filter** — Results are filtered for freshness (≤48h), deduplicated by URL and near-duplicate title, hub/homepage pages are removed, then heuristically pre-trimmed to 30 candidates so the LLM prompt stays small
+4. **Score** — All candidates are ranked in a single batched LLM call (1 call per run) by Llama 3.1 8B via Ollama; on LLM failure a zero-LLM heuristic ranking is used
 5. **Serve** — Top 7 articles appear at `http://localhost:8000`
-6. **Learn** — Like/dislike buttons generate topic fingerprints that bias future searches
+6. **Learn** — Like/dislike buttons store the article title as the topic fingerprint (no LLM call) to bias future searches and ranking
 
 ## Prerequisites
 
@@ -18,7 +18,7 @@ Daily curated AI news briefing served on your local network. An LLM searches the
 
 ## Minimum machine specs
 
-The pipeline runs ~14 LLM calls per day (1 query generation + 7 scoring + 6 fingerprinting).
+The pipeline runs exactly 1 LLM call per day (single batched ranking; query generation and fallback ranking use zero-LLM heuristics).
 
 | Resource | Minimum | Recommended |
 |----------|---------|-------------|
@@ -53,7 +53,7 @@ ollama pull <model-name>
 | `phi3` | 2 GB | Decent — good balance of speed and quality |
 | `gemma2:9b` | 6 GB | Good — strong at instruction following |
 
-The model handles three tasks: generating search queries, scoring articles 1-10, and generating topic fingerprints. All three benefit from better instruction following, so `llama3.1:8b` is the sweet spot for most setups.
+The model handles one task: batched ranking of up to 30 candidates 1-10 in a single call. Better instruction following still helps, so `llama3.1:8b` is the sweet spot for most setups.
 
 ## Setup
 
@@ -91,7 +91,7 @@ The server runs at `http://localhost:8000` by default. Configure with environmen
 ```
 main.py          FastAPI app + scheduler
 pipeline.py      Search → filter → score → store
-llm.py           Ollama integration (query gen, scoring, fingerprints)
+llm.py           Ollama integration (batched ranking, heuristic fallback)
 db.py            SQLite async layer
 templates/       Jinja2 HTML templates
 static/          CSS
@@ -100,40 +100,13 @@ data/            Database (gitignored)
 
 ## LLM prompts
 
-The system uses three prompts, all sent to Ollama with `stream: false`. When the user has liked/disliked articles, topic fingerprints are injected into each prompt.
+The system uses one prompt, sent to Ollama with `stream: false`. When the user has liked/disliked articles, topic fingerprints are injected into the prompt. Search query generation and the fallback ranking use zero-LLM heuristics (no prompt).
 
-**Search query generation** — runs once per pipeline, generates 7 DuckDuckGo queries:
-
-```
-You are an AI news editor planning today's search. Generate 7 diverse
-DuckDuckGo search queries to find the most interesting AI news from
-the last 24 hours.
-
-USER PREFERENCES:
-User LIKED: <topic fingerprints>
-User DISLIKED: <topic fingerprints>
-
-RULES:
-- Each query should target SPECIFIC recent news, not general hub pages
-- Focus on: new model releases, research breakthroughs, product launches,
-  major funding, policy/regulation, open-source releases
-- Avoid generic queries like "AI news" — be specific (e.g. "GPT-5 release
-  date", "Anthropic Claude update 2026")
-- If user liked certain topics, include queries for similar areas
-- If user disliked certain topics, avoid those areas
-- Queries should be short, 3-6 words each
-
-Return ONLY a JSON array of 7 query strings. No explanation, no markdown fences.
-```
-
-**Article scoring** — runs once per candidate article, returns 1-10:
+**Batched article ranking** — runs once per pipeline, scores up to 30 candidates in a single call:
 
 ```
-Score this AI news article from 1-10 for relevance and novelty.
-
-Title: <title>
-Source: <source>
-Summary: <summary>
+You are an AI news editor. Score each of the N articles below from 1-10
+for relevance and novelty.
 
 USER PREFERENCES:
 User LIKED: <topic fingerprints>
@@ -144,20 +117,18 @@ RULES:
 - 7-9 = significant development, novel angle
 - 4-6 = routine industry news, funding rounds, minor updates
 - 1-3 = rehashed old news, filler, off-topic, hub/homepage pages
+- Penalize clickbait, duplicates, and off-topic items
+- If user preferences are given, boost matching topics and penalize disliked ones
 
-Return ONLY the number. No explanation.
+ARTICLES:
+[0] Title: <title> | Source: <source> | Summary: <summary>
+...
+
+Return ONLY a JSON array like [{"i": 0, "score": 8}, {"i": 1, "score": 5}]
+covering every index. No explanation, no markdown fences.
 ```
 
-**Topic fingerprinting** — runs once per liked/disliked article, generates a 2-6 word label:
-
-```
-Generate a short topic fingerprint (2-6 words) for this news article:
-Title: <title>
-Source: <source>
-Summary: <summary>
-
-Return ONLY the fingerprint text, no quotes, no explanation.
-```
+**Legacy single-article scorer** — `score_article()` is kept as a backwards-compat wrapper but is no longer used by the pipeline.
 
 ## Running tests
 

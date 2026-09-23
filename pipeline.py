@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import time
 from datetime import UTC, date, datetime, timedelta
 from urllib.parse import urlparse
@@ -16,6 +17,9 @@ logger = logging.getLogger(__name__)
 
 _lock = asyncio.Lock()
 _last_run: datetime | None = None
+
+# Cap candidates sent to the LLM: keeps the single batched prompt small.
+MAX_CANDIDATES_FOR_LLM = llm.MAX_LLM_CANDIDATES
 
 
 def _is_recent(publish_date: str | None, hours: int = 48) -> bool:
@@ -101,6 +105,41 @@ def _is_hub_page(url: str) -> bool:
     return bool(not has_date and len(segments) <= 2)
 
 
+def _normalize_title(title: str) -> str:
+    """Normalize titles for near-duplicate detection (zero LLM cost)."""
+    t = title.lower()
+    t = re.sub(r"[^a-z0-9\s]", "", t)
+    return re.sub(r"\s+", " ", t).strip()
+
+
+def _dedupe_by_title(articles: list[dict]) -> list[dict]:
+    seen: set[str] = set()
+    unique: list[dict] = []
+    for a in articles:
+        key = _normalize_title(a.get("title", ""))
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        unique.append(a)
+    return unique
+
+
+def _pretrim_for_llm(articles: list[dict], preferences: list[dict]) -> list[dict]:
+    """Heuristically trim candidates to MAX_CANDIDATES_FOR_LLM (zero LLM cost).
+
+    Keeps the single batched LLM prompt small and fast without extra calls.
+    """
+    if len(articles) <= MAX_CANDIDATES_FOR_LLM:
+        return articles
+    ranked = llm.heuristic_rank(list(articles), preferences)
+    logger.info(
+        "Pre-trimmed %d candidates to %d for single LLM call",
+        len(articles),
+        MAX_CANDIDATES_FOR_LLM,
+    )
+    return ranked[:MAX_CANDIDATES_FOR_LLM]
+
+
 async def _search_ddgs(queries: list[str]) -> list[dict]:
     results = []
 
@@ -148,10 +187,10 @@ async def run_pipeline() -> dict:
     async with _lock:
         logger.info("Pipeline started at %s", datetime.now(UTC).isoformat())
         try:
-            # Step 0: Ask LLM what to search for
+            # Step 0: Search queries (ZERO LLM calls — static + preference keywords)
             preferences = await db.get_recent_preferences(days=7)
             queries = await llm.generate_search_queries(preferences)
-            logger.info("LLM generated search queries: %s", queries)
+            logger.info("Search queries: %s", queries)
 
             # Step 1: Search
             logger.info("Running DDGS searches with %d queries", len(queries))
@@ -162,10 +201,12 @@ async def run_pipeline() -> dict:
             fresh = [c for c in candidates if _is_recent(c.get("publish_date"))]
             logger.info("After freshness filter: %d candidates", len(fresh))
 
-            # Step 3: Dedup
+            # Step 3: Dedup (exact URL + near-duplicate titles, both zero-LLM)
             existing_urls = await db.get_all_article_urls()
             unique = [c for c in fresh if c["url"] not in existing_urls]
-            logger.info("After dedup: %d candidates", len(unique))
+            logger.info("After URL dedup: %d candidates", len(unique))
+            unique = _dedupe_by_title(unique)
+            logger.info("After title dedup: %d candidates", len(unique))
 
             # Step 3.5: Filter hub pages
             articles = [c for c in unique if not _is_hub_page(c["url"])]
@@ -176,13 +217,16 @@ async def run_pipeline() -> dict:
                 _last_run = datetime.now(UTC)
                 return {"status": "no_candidates"}
 
-            # Step 4: LLM curation — score each article individually
-            curated = await llm.curate_articles(articles, preferences)
-            logger.info("LLM curated %d articles", len(curated))
+            # Step 3.6: Heuristic pre-trim so the single LLM prompt stays small
+            shortlist = _pretrim_for_llm(articles, preferences)
+
+            # Step 4: Curation — exactly ONE LLM call (batched ranking)
+            curated = await llm.curate_articles(shortlist, preferences)
+            logger.info("LLM curated %d articles (1 call)", len(curated))
 
             if not curated:
-                curated = llm._fallback_by_date(articles)
-                logger.warning("LLM returned nothing, using fallback: %d articles", len(curated))
+                curated = llm.heuristic_rank(articles, preferences)[: llm.EDITION_SIZE]
+                logger.warning("LLM returned nothing, using heuristic fallback: %d articles", len(curated))
 
             # Step 5: Store edition
             today = date.today()  # noqa: DTZ011
